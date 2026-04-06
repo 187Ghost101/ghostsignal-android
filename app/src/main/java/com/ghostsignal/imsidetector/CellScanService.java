@@ -38,7 +38,7 @@ public class CellScanService extends Service {
                 loc -> lastLocation = loc);
         }
         createNotificationChannel();
-        startForeground(Constants.NOTIF_ID, buildNotification("Scanning cellular networks..."));
+        startForeground(Constants.NOTIF_ID, buildNotification("Scanning..."));
     }
 
     @Override
@@ -96,6 +96,9 @@ public class CellScanService extends Service {
                 data.put("longitude", lastLocation != null ? lastLocation.getLongitude() : 0.0);
                 data.put("deviceId", android.os.Build.MODEL);
 
+                final int finalCellId = cellId;
+                final String finalNetwork = network;
+
                 URL url = new URL(Constants.API_ENDPOINT);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
@@ -119,10 +122,31 @@ public class CellScanService extends Service {
                     String status = resp.optString("status", "SAFE");
                     int score = resp.optInt("score", 0);
                     updateNotification(status, score);
+
+                    org.json.JSONArray flagsArr = resp.optJSONArray("flags");
+                    StringBuilder flagsStr = new StringBuilder();
+                    if (flagsArr != null) {
+                        for (int i = 0; i < flagsArr.length(); i++) {
+                            if (i > 0) flagsStr.append(", ");
+                            flagsStr.append(flagsArr.getString(i));
+                        }
+                    }
+
+                    if (MainActivity.instance != null) {
+                        MainActivity.instance.updateScanResult(status, score, flagsStr.toString(), finalNetwork, finalCellId);
+                    }
+
                     if ("DANGER".equals(status)) {
                         Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
                         if (v != null && v.hasVibrator())
                             v.vibrate(VibrationEffect.createWaveform(new long[]{0, 300, 100, 300, 100, 300}, -1));
+                    }
+                } else {
+                    // Show HTTP error in notification
+                    NotificationManager nm2 = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                    nm2.notify(Constants.NOTIF_ID, buildNotification("Erreur HTTP: " + code + " - verif connexion"));
+                    if (MainActivity.instance != null) {
+                        MainActivity.instance.updateScanResult("SAFE", 0, "Erreur HTTP " + code, finalNetwork, finalCellId);
                     }
                 }
                 conn.disconnect();
