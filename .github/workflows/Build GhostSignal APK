@@ -1,4 +1,4 @@
-name: Build GhostSignal APK
+name: build.yml
 
 on:
   push:
