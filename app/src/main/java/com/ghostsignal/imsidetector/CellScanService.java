@@ -1,0 +1,169 @@
+package com.ghostsignal.imsidetector;
+
+import android.app.*;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.*;
+import android.os.*;
+import android.Manifest;
+import android.telephony.*;
+import org.json.JSONObject;
+import java.io.*;
+import java.net.*;
+import java.util.List;
+
+public class CellScanService extends Service {
+
+    private Handler handler;
+    private LocationManager locationManager;
+    private Location lastLocation;
+    private TelephonyManager tm;
+
+    private final Runnable scanRunnable = new Runnable() {
+        @Override
+        public void run() {
+            performScan();
+            handler.postDelayed(this, Constants.SCAN_INTERVAL_MS);
+        }
+    };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        handler = new Handler(Looper.getMainLooper());
+        tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 10,
+                loc -> lastLocation = loc);
+        }
+        createNotificationChannel();
+        startForeground(Constants.NOTIF_ID, buildNotification("Scanning cellular networks..."));
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        handler.post(scanRunnable);
+        return START_STICKY;
+    }
+
+    private void performScan() {
+        new Thread(() -> {
+            try {
+                JSONObject data = new JSONObject();
+                int cellId = -1, signal = -100, neighbors = 0, rsrp = -140, rsrq = -20, sinr = -20;
+                String network = "UNKNOWN";
+
+                if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+                    List<CellInfo> cells = tm.getAllCellInfo();
+                    if (cells != null) {
+                        neighbors = cells.size() - 1;
+                        for (CellInfo ci : cells) {
+                            if (ci.isRegistered()) {
+                                if (ci instanceof CellInfoLte) {
+                                    CellInfoLte l = (CellInfoLte) ci;
+                                    cellId = l.getCellIdentity().getCi();
+                                    signal = l.getCellSignalStrength().getDbm();
+                                    rsrp = l.getCellSignalStrength().getRsrp();
+                                    rsrq = l.getCellSignalStrength().getRsrq();
+                                    sinr = l.getCellSignalStrength().getRssnr();
+                                    network = "LTE";
+                                } else if (ci instanceof CellInfoNr) {
+                                    CellInfoNr n = (CellInfoNr) ci;
+                                    cellId = (int)(((CellIdentityNr) n.getCellIdentity()).getNci() & 0xFFFFFFFFL);
+                                    signal = n.getCellSignalStrength().getDbm();
+                                    network = "5G";
+                                } else if (ci instanceof CellInfoGsm) {
+                                    CellInfoGsm g = (CellInfoGsm) ci;
+                                    cellId = g.getCellIdentity().getCid();
+                                    signal = g.getCellSignalStrength().getDbm();
+                                    network = "GSM";
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                data.put("network", network);
+                data.put("cellId", cellId);
+                data.put("signal", signal);
+                data.put("neighbors", Math.max(0, neighbors));
+                data.put("rsrp", rsrp);
+                data.put("rsrq", rsrq);
+                data.put("sinr", sinr);
+                data.put("latitude", lastLocation != null ? lastLocation.getLatitude() : 0.0);
+                data.put("longitude", lastLocation != null ? lastLocation.getLongitude() : 0.0);
+                data.put("deviceId", android.os.Build.MODEL);
+
+                URL url = new URL(Constants.API_ENDPOINT);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(10000);
+
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(data.toString().getBytes("UTF-8"));
+                }
+
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line);
+                    }
+                    JSONObject resp = new JSONObject(sb.toString());
+                    String status = resp.optString("status", "SAFE");
+                    int score = resp.optInt("score", 0);
+                    updateNotification(status, score);
+                    if ("DANGER".equals(status)) {
+                        Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+                        if (v != null && v.hasVibrator())
+                            v.vibrate(VibrationEffect.createWaveform(new long[]{0, 300, 100, 300, 100, 300}, -1));
+                    }
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
+
+    private void updateNotification(String status, int score) {
+        String text = "DANGER".equals(status) ? "DANGER! Score: " + score + "/100"
+                    : "SUSPICIOUS".equals(status) ? "Suspect. Score: " + score + "/100"
+                    : "Securise. Score: " + score + "/100";
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        nm.notify(Constants.NOTIF_ID, buildNotification(text));
+    }
+
+    private Notification buildNotification(String text) {
+        Intent intent = new Intent(this, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        return new Notification.Builder(this, Constants.NOTIF_CHANNEL_ID)
+            .setContentTitle("GhostSignal")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build();
+    }
+
+    private void createNotificationChannel() {
+        NotificationChannel ch = new NotificationChannel(
+            Constants.NOTIF_CHANNEL_ID, "GhostSignal", NotificationManager.IMPORTANCE_LOW);
+        getSystemService(NotificationManager.class).createNotificationChannel(ch);
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
+
+    @Override
+    public void onDestroy() {
+        handler.removeCallbacks(scanRunnable);
+        super.onDestroy();
+    }
+}

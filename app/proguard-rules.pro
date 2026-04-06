@@ -1,0 +1,1 @@
+# GhostSignal proguard rules
