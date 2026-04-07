@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.*;
+import android.view.View;
 import android.Manifest;
 
 public class MainActivity extends Activity {
