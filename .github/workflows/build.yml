@@ -15,59 +15,52 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Gradle 8.2
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.2'
-
-      - name: Generate Gradle wrapper JAR
+      - name: Download Gradle wrapper JAR
         run: |
-          mkdir -p gradle/wrapper/
-          mkdir /tmp/gen && cd /tmp/gen
-          echo '' > settings.gradle
-          gradle wrapper --gradle-version 8.2
-          cp gradle/wrapper/gradle-wrapper.jar $GITHUB_WORKSPACE/gradle/wrapper/
+          mkdir -p gradle/wrapper
+          curl -L -o gradle/wrapper/gradle-wrapper.jar \
+            https://github.com/gradle/gradle/raw/v8.2.0/gradle/wrapper/gradle-wrapper.jar
 
-      - name: Force write Gradle config files
+      - name: Write Gradle files
         run: |
-          cat > gradle.properties << 'ENDOFFILE'
-          android.useAndroidX=true
-          android.enableJetifier=true
-          ENDOFFILE
-          cat > build.gradle << 'ENDOFFILE'
-          buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath 'com.android.tools.build:gradle:8.2.0' }
-          }
-          allprojects {
-              repositories { google(); mavenCentral() }
-          }
-          ENDOFFILE
-          cat > app/build.gradle << 'ENDOFFILE'
-          apply plugin: 'com.android.application'
-          android {
-              namespace 'com.ghostsignal.imsidetector'
-              compileSdk 34
-              defaultConfig {
-                  applicationId "com.ghostsignal.imsidetector"
-                  minSdk 26
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-          }
-          dependencies {}
-          ENDOFFILE
+          cat > build.gradle << 'EOF'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.2.0' }
+}
+allprojects {
+    repositories { google(); mavenCentral() }
+}
+EOF
+          cat > gradle.properties << 'EOF'
+android.useAndroidX=true
+android.enableJetifier=true
+EOF
+          cat > app/build.gradle << 'EOF'
+apply plugin: 'com.android.application'
+android {
+    namespace 'com.ghostsignal.imsidetector'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.ghostsignal.imsidetector"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+dependencies {}
+EOF
 
       - name: Build Debug APK
         run: |
