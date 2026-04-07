@@ -1,6 +1,6 @@
 package com.ghostsignal.imsidetector;
 
-import android.app.Activity;
+public static final String API_ENDPOINT = "https://api.base44.com/api/apps/69bbda5b75a19519f5fc1e19/functions/receiveScan";
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
