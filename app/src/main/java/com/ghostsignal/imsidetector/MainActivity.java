@@ -1,6 +1,7 @@
 package com.ghostsignal.imsidetector;
 
-public static final String API_ENDPOINT = "https://api.base44.com/api/apps/69bbda5b75a19519f5fc1e19/functions/receiveScan";
+import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -8,25 +9,29 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.widget.*;
 import android.view.View;
-import android.Manifest;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 public class MainActivity extends Activity {
-
     private static final int PERM_CODE = 100;
+
     private final String[] PERMS = {
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.POST_NOTIFICATIONS
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.POST_NOTIFICATIONS
     };
+
     private TextView statusText;
     private TextView resultText;
     private TextView scoreText;
     private TextView flagsText;
     private TextView lastScanText;
-    private Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     public static MainActivity instance;
 
@@ -65,21 +70,25 @@ public class MainActivity extends Activity {
         btn.setText("DEMARRER LA SURVEILLANCE");
         btn.setBackgroundColor(Color.parseColor("#00E5FF"));
         btn.setTextColor(Color.BLACK);
+
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
         p.setMargins(0, 20, 0, 24);
         btn.setLayoutParams(p);
+
         btn.setOnClickListener(v -> {
             if (hasPerms()) startScan();
             else requestPermissions(PERMS, PERM_CODE);
         });
         layout.addView(btn);
 
-        // Separator
         View sep = new View(this);
         sep.setBackgroundColor(Color.parseColor("#222222"));
         LinearLayout.LayoutParams sepParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 2);
+                LinearLayout.LayoutParams.MATCH_PARENT, 2
+        );
         sepParams.setMargins(0, 0, 0, 16);
         sep.setLayoutParams(sepParams);
         layout.addView(sep);
@@ -114,7 +123,7 @@ public class MainActivity extends Activity {
         layout.addView(flagsText);
 
         lastScanText = new TextView(this);
-        lastScanText.setText("Premier scan dans ~30 secondes...");
+        lastScanText.setText("Premier scan dans ~10 secondes...");
         lastScanText.setTextSize(11);
         lastScanText.setTextColor(Color.parseColor("#888888"));
         lastScanText.setPadding(0, 8, 0, 0);
@@ -129,23 +138,37 @@ public class MainActivity extends Activity {
 
     public void updateScanResult(String status, int score, String flags, String network, int cellId) {
         handler.post(() -> {
-            String emoji = "DANGER".equals(status) ? "DANGER" : "SUSPICIOUS".equals(status) ? "SUSPECT" : "SECURISE";
-            int color = "DANGER".equals(status) ? Color.parseColor("#FF3333") :
-                        "SUSPICIOUS".equals(status) ? Color.parseColor("#FFAA00") :
-                        Color.parseColor("#00FF88");
-            resultText.setText(emoji);
+            String label = "DANGER".equals(status)
+                    ? "DANGER"
+                    : "SUSPICIOUS".equals(status)
+                    ? "SUSPECT"
+                    : "SECURISE";
+
+            int color = "DANGER".equals(status)
+                    ? Color.parseColor("#FF3333")
+                    : "SUSPICIOUS".equals(status)
+                    ? Color.parseColor("#FFAA00")
+                    : Color.parseColor("#00FF88");
+
+            resultText.setText(label);
             resultText.setTextColor(color);
-            scoreText.setText("Score: " + score + "/100  |  Reseau: " + network + "  |  Cell: " + cellId);
-            flagsText.setText(flags.isEmpty() ? "Aucune anomalie detectee" : "Anomalies: " + flags);
-            flagsText.setTextColor(flags.isEmpty() ? Color.parseColor("#00FF88") : Color.parseColor("#FFAA00"));
-            lastScanText.setText("Mis a jour: " + new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()));
+            scoreText.setText("Score: " + score + "/100 | Reseau: " + network + " | Cell: " + cellId);
+            flagsText.setText(flags == null || flags.isEmpty()
+                    ? "Aucune anomalie detectee"
+                    : "Anomalies: " + flags);
+            flagsText.setTextColor((flags == null || flags.isEmpty())
+                    ? Color.parseColor("#00FF88")
+                    : Color.parseColor("#FFAA00"));
+            lastScanText.setText("Mis a jour: " +
+                    new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                            .format(new java.util.Date()));
         });
     }
 
     private boolean hasPerms() {
-        for (String p : PERMS)
-            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED)
-                return false;
+        for (String p : PERMS) {
+            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+        }
         return true;
     }
 
