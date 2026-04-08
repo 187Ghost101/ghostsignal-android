@@ -13,7 +13,13 @@ import java.net.*;
 import java.util.List;
 
 public class CellScanService extends Service {
+private void debug(String msg) {
+    android.util.Log.d("GhostSignal", msg);
 
+    if (MainActivity.instance != null) {
+        MainActivity.instance.logToScreen(msg);
+    }
+}
     private Handler handler;
     private LocationManager locationManager;
     private Location lastLocation;
@@ -38,25 +44,25 @@ public class CellScanService extends Service {
                 loc -> lastLocation = loc);
         }
         createNotificationChannel();
-        startForeground(Constants.NOTIF_ID, buildNotification("Scanning..."));
+        startForeground(Constants.NOTIF_ID, buildNotification("Scanning..."));debug("Service cree et foreground lance");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        handler.post(scanRunnable);
+        handler.post(scanRunnable);debug("onStartCommand -> scanRunnable lance");
         return START_STICKY;
     }
 
     private void performScan() {
         new Thread(() -> {
-            try {
+            try {debug("Debut scan");
                 JSONObject data = new JSONObject();
                 int cellId = -1, signal = -100, neighbors = 0, rsrp = -140, rsrq = -20, sinr = -20;
                 String network = "UNKNOWN";
 
                 if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
                     List<CellInfo> cells = tm.getAllCellInfo();
-                    if (cells != null) {
+                    if (cells != null) {debug("Cells detectees: " + cells.size());
                         neighbors = cells.size() - 1;
                         for (CellInfo ci : cells) {
                             if (ci.isRegistered()) {
@@ -98,7 +104,7 @@ public class CellScanService extends Service {
 
                 final int finalCellId = cellId;
                 final String finalNetwork = network;
-
+debug("Envoi vers API...");
                 URL url = new URL(Constants.API_ENDPOINT);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
@@ -112,7 +118,7 @@ public class CellScanService extends Service {
                 }
 
                 int code = conn.getResponseCode();
-                if (code == 200) {
+                if (code == 200) {debug("API OK (200)");
                     StringBuilder sb = new StringBuilder();
                     try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                         String line;
@@ -141,7 +147,7 @@ public class CellScanService extends Service {
                         if (v != null && v.hasVibrator())
                             v.vibrate(VibrationEffect.createWaveform(new long[]{0, 300, 100, 300, 100, 300}, -1));
                     }
-                } else {
+                } else {debug("Erreur HTTP: " + code);
                     // Show HTTP error in notification
                     NotificationManager nm2 = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                     nm2.notify(Constants.NOTIF_ID, buildNotification("Erreur HTTP: " + code + " - verif connexion"));
@@ -150,9 +156,10 @@ public class CellScanService extends Service {
                     }
                 }
                 conn.disconnect();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+           } catch (Exception e) {
+    debug("EXCEPTION: " + e.toString());
+    e.printStackTrace();
+}
         }).start();
     }
 
