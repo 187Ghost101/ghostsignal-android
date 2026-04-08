@@ -9,7 +9,6 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -25,15 +24,16 @@ public class MainActivity extends Activity {
             Manifest.permission.POST_NOTIFICATIONS
     };
 
+    public static MainActivity instance;
+
     private TextView statusText;
     private TextView resultText;
     private TextView scoreText;
     private TextView flagsText;
     private TextView lastScanText;
+    private TextView debugText;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-
-    public static MainActivity instance;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
         layout.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Detecteur IMSI Catcher v3.0 - 10s scan");
+        subtitle.setText("Detecteur IMSI Catcher - Donnees reelles");
         subtitle.setTextSize(13);
         subtitle.setTextColor(Color.parseColor("#888888"));
         subtitle.setPadding(0, 8, 0, 24);
@@ -70,118 +70,126 @@ public class MainActivity extends Activity {
         btn.setText("DEMARRER LA SURVEILLANCE");
         btn.setBackgroundColor(Color.parseColor("#00E5FF"));
         btn.setTextColor(Color.BLACK);
-
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        p.setMargins(0, 20, 0, 24);
-        btn.setLayoutParams(p);
-
         btn.setOnClickListener(v -> {
-            if (hasPerms()) startScan();
-            else requestPermissions(PERMS, PERM_CODE);
+            logToScreen("Bouton clique");
+            if (hasPerms()) {
+                logToScreen("Permissions OK");
+                startScan();
+            } else {
+                logToScreen("Permissions manquantes - demande envoyee");
+                requestPermissions(PERMS, PERM_CODE);
+            }
         });
         layout.addView(btn);
 
-        View sep = new View(this);
-        sep.setBackgroundColor(Color.parseColor("#222222"));
-        LinearLayout.LayoutParams sepParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 2
-        );
-        sepParams.setMargins(0, 0, 0, 16);
-        sep.setLayoutParams(sepParams);
-        layout.addView(sep);
-
-        TextView resultsTitle = new TextView(this);
-        resultsTitle.setText("DERNIER SCAN");
-        resultsTitle.setTextSize(11);
-        resultsTitle.setTextColor(Color.parseColor("#555555"));
-        resultsTitle.setTypeface(null, Typeface.BOLD);
-        resultsTitle.setPadding(0, 0, 0, 8);
-        layout.addView(resultsTitle);
-
         resultText = new TextView(this);
-        resultText.setText("En attente du premier scan...");
-        resultText.setTextSize(22);
+        resultText.setText("En attente...");
+        resultText.setTextSize(24);
         resultText.setTextColor(Color.parseColor("#AAAAAA"));
         resultText.setTypeface(null, Typeface.BOLD);
+        resultText.setPadding(0, 30, 0, 10);
         layout.addView(resultText);
 
         scoreText = new TextView(this);
         scoreText.setText("");
         scoreText.setTextSize(14);
         scoreText.setTextColor(Color.parseColor("#00E5FF"));
-        scoreText.setPadding(0, 4, 0, 4);
         layout.addView(scoreText);
 
         flagsText = new TextView(this);
         flagsText.setText("");
-        flagsText.setTextSize(12);
+        flagsText.setTextSize(13);
         flagsText.setTextColor(Color.parseColor("#FFAA00"));
-        flagsText.setPadding(0, 4, 0, 4);
+        flagsText.setPadding(0, 8, 0, 8);
         layout.addView(flagsText);
 
         lastScanText = new TextView(this);
-        lastScanText.setText("Premier scan dans ~10 secondes...");
-        lastScanText.setTextSize(11);
+        lastScanText.setText("Aucun scan recu");
+        lastScanText.setTextSize(12);
         lastScanText.setTextColor(Color.parseColor("#888888"));
-        lastScanText.setPadding(0, 8, 0, 0);
         layout.addView(lastScanText);
+
+        debugText = new TextView(this);
+        debugText.setText("\n--- DEBUG ---\n");
+        debugText.setTextSize(12);
+        debugText.setTextColor(Color.parseColor("#CCCCCC"));
+        debugText.setPadding(0, 30, 0, 0);
+        layout.addView(debugText);
 
         scroll.addView(layout);
         setContentView(scroll);
 
-        if (hasPerms()) startScan();
-        else requestPermissions(PERMS, PERM_CODE);
+        logToScreen("MainActivity chargee");
+
+        if (hasPerms()) {
+            logToScreen("Permissions deja accordees");
+            startScan();
+        } else {
+            logToScreen("Permissions a demander au lancement");
+            requestPermissions(PERMS, PERM_CODE);
+        }
     }
 
     public void updateScanResult(String status, int score, String flags, String network, int cellId) {
         handler.post(() -> {
-            String label = "DANGER".equals(status)
-                    ? "DANGER"
-                    : "SUSPICIOUS".equals(status)
-                    ? "SUSPECT"
-                    : "SECURISE";
+            logToScreen("updateScanResult appelee: " + status);
 
-            int color = "DANGER".equals(status)
-                    ? Color.parseColor("#FF3333")
-                    : "SUSPICIOUS".equals(status)
-                    ? Color.parseColor("#FFAA00")
-                    : Color.parseColor("#00FF88");
+            int color = Color.parseColor("#00FF88");
+            if ("DANGER".equals(status)) color = Color.parseColor("#FF3333");
+            else if ("SUSPICIOUS".equals(status)) color = Color.parseColor("#FFAA00");
 
-            resultText.setText(label);
+            resultText.setText(status);
             resultText.setTextColor(color);
-            scoreText.setText("Score: " + score + "/100 | Reseau: " + network + " | Cell: " + cellId);
-            flagsText.setText(flags == null || flags.isEmpty()
-                    ? "Aucune anomalie detectee"
-                    : "Anomalies: " + flags);
-            flagsText.setTextColor((flags == null || flags.isEmpty())
-                    ? Color.parseColor("#00FF88")
-                    : Color.parseColor("#FFAA00"));
-            lastScanText.setText("Mis a jour: " +
+            scoreText.setText("Score: " + score + "/100 | Reseau: " + network + " | CellID: " + cellId);
+            flagsText.setText("Flags: " + (flags == null ? "aucun" : flags));
+            lastScanText.setText("Dernier scan: " +
                     new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
                             .format(new java.util.Date()));
         });
     }
 
+    public void logToScreen(String msg) {
+        handler.post(() -> {
+            String current = debugText.getText().toString();
+            String time = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                    .format(new java.util.Date());
+            debugText.setText(current + "\n[" + time + "] " + msg);
+        });
+    }
+
     private boolean hasPerms() {
         for (String p : PERMS) {
-            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
         }
         return true;
     }
 
     private void startScan() {
-        startForegroundService(new Intent(this, CellScanService.class));
-        statusText.setText("Surveillance active");
-        statusText.setTextColor(Color.parseColor("#00FF88"));
+        try {
+            startForegroundService(new Intent(this, CellScanService.class));
+            statusText.setText("Surveillance active - donnees envoyees au cloud");
+            statusText.setTextColor(Color.parseColor("#00FF88"));
+            logToScreen("Foreground service demarre");
+        } catch (Exception e) {
+            logToScreen("Erreur startScan: " + e.getMessage());
+            statusText.setText("Erreur lancement service");
+            statusText.setTextColor(Color.RED);
+        }
     }
 
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
-        if (hasPerms()) startScan();
+        if (hasPerms()) {
+            logToScreen("Permissions acceptees");
+            startScan();
+        } else {
+            logToScreen("Permissions refusees");
+            statusText.setText("Permissions refusees");
+            statusText.setTextColor(Color.RED);
+        }
     }
 
     @Override
