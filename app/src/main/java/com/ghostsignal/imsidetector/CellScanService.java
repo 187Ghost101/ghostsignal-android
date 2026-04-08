@@ -13,13 +13,15 @@ import java.net.*;
 import java.util.List;
 
 public class CellScanService extends Service {
-private void debug(String msg) {
-    android.util.Log.d("GhostSignal", msg);
 
-    if (MainActivity.instance != null) {
-        MainActivity.instance.logToScreen(msg);
+    private void debug(String msg) {
+        android.util.Log.d("GhostSignal", msg);
+
+        if (MainActivity.instance != null) {
+            MainActivity.instance.logToScreen(msg);
+        }
     }
-}
+
     private Handler handler;
     private LocationManager locationManager;
     private Location lastLocation;
@@ -44,8 +46,8 @@ private void debug(String msg) {
                 loc -> lastLocation = loc);
         }
         createNotificationChannel();
-        startForeground(Constants.NOTIF_ID, buildNotification("Scanning..."));debug("Service cree et foreground lance");
-    }
+     startForeground(Constants.NOTIF_ID, buildNotification("Scanning..."));
+debug("Service cree et foreground lance");
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -53,9 +55,10 @@ private void debug(String msg) {
         return START_STICKY;
     }
 
-    private void performScan() {
-        new Thread(() -> {
-            try {debug("Debut scan");
+   private void performScan() {
+    new Thread(() -> {
+        try {
+            debug("Debut scan");
                 JSONObject data = new JSONObject();
                 int cellId = -1, signal = -100, neighbors = 0, rsrp = -140, rsrq = -20, sinr = -20;
                 String network = "UNKNOWN";
