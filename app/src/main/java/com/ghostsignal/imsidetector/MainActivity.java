@@ -1,6 +1,7 @@
 package com.ghostsignal.imsidetector;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -10,12 +11,7 @@ import android.provider.Settings;
 import android.widget.Button;
 import android.widget.TextView;
 
-
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
     private static final int REQ_PERMS = 1001;
 
@@ -34,107 +30,62 @@ public class MainActivity extends AppCompatActivity {
 
         appendDebug("MainActivity chargee");
 
-        checkPermissionsOnLaunch();
+        checkPermissions();
 
         btnStart.setOnClickListener(v -> {
-            appendDebug("Bouton clique");
-
-            if (hasRequiredPermissions()) {
-                tvPermissionStatus.setText("Permissions OK");
+            if (hasPermissions()) {
+                tvPermissionStatus.setText("OK");
                 startService(new Intent(this, CellScanService.class));
             } else {
-                appendDebug("Permissions manquantes - demande envoyee");
-                requestRequiredPermissions();
+                requestPermissions();
             }
         });
     }
 
-    private void checkPermissionsOnLaunch() {
-        appendDebug("Permissions a demander au lancement");
-
-        if (hasRequiredPermissions()) {
+    private void checkPermissions() {
+        if (hasPermissions()) {
             tvPermissionStatus.setText("Permissions OK");
-            appendDebug("Permissions acceptees");
         } else {
             tvPermissionStatus.setText("Permissions refusees");
-            requestRequiredPermissions();
+            requestPermissions();
         }
     }
 
-    private boolean hasRequiredPermissions() {
-        boolean fineLocation =
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                        == PackageManager.PERMISSION_GRANTED;
-
-        boolean phoneState =
-                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
-                        == PackageManager.PERMISSION_GRANTED;
-
-        return fineLocation && phoneState;
+    private boolean hasPermissions() {
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+               checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void requestRequiredPermissions() {
-        ActivityCompat.requestPermissions(
-                this,
-                new String[]{
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.READ_PHONE_STATE
-                },
-                REQ_PERMS
-        );
+    private void requestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(
+                    new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.READ_PHONE_STATE
+                    },
+                    REQ_PERMS
+            );
+        }
     }
 
     @Override
- public void onRequestPermissionsResult(
-        int requestCode,
-        String[] permissions,
-        int[] grantResults
-)
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode != REQ_PERMS) return;
 
-        if (hasRequiredPermissions()) {
+        if (hasPermissions()) {
             tvPermissionStatus.setText("Permissions acceptees");
-            appendDebug("Permissions acceptees");
-            startService(new Intent(this, CellScanService.class));
-            return;
-        }
+            appendDebug("OK");
+        } else {
+            tvPermissionStatus.setText("Bloque - ouvre Parametres");
 
-      @Override
-public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-    if (requestCode != REQ_PERMS) return;
-
-    if (hasRequiredPermissions()) {
-        tvPermissionStatus.setText("Permissions acceptees");
-        appendDebug("Permissions acceptees");
-        return;
-    }
-
-    boolean showFine = shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION);
-    boolean showPhone = shouldShowRequestPermissionRationale(Manifest.permission.READ_PHONE_STATE);
-
-    if (!showFine || !showPhone) {
-        tvPermissionStatus.setText("Permissions bloquees - ouvre Parametres");
-        appendDebug("Permissions bloquees par Android");
-
-        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-        intent.setData(Uri.parse("package:" + getPackageName()));
-        startActivity(intent);
-    } else {
-        tvPermissionStatus.setText("Permissions refusees");
-        appendDebug("Permissions refusees");
-    }
-}
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
         }
     }
 
     private void appendDebug(String msg) {
         String old = tvDebug.getText().toString();
-        String next = old + "\n" + msg;
-        tvDebug.setText(next);
+        tvDebug.setText(old + "\n" + msg);
     }
 }
