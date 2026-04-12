@@ -33,15 +33,16 @@ public class MainActivity extends Activity {
         btnStart = findViewById(R.id.btnStart);
 
         appendDebug("MainActivity chargee");
-
         checkPermissions();
 
         btnStart.setOnClickListener(v -> {
             if (hasPermissions()) {
                 tvPermissionStatus.setText("OK");
+                appendDebug("Demarrage du service");
                 startService(new Intent(this, CellScanService.class));
             } else {
-                requestPermissions();
+                appendDebug("Permissions manquantes");
+                requestRequiredPermissions();
             }
         });
     }
@@ -57,18 +58,27 @@ public class MainActivity extends Activity {
     private void checkPermissions() {
         if (hasPermissions()) {
             tvPermissionStatus.setText("Permissions OK");
+            appendDebug("Permissions OK");
         } else {
             tvPermissionStatus.setText("Permissions refusees");
-            requestPermissions();
+            appendDebug("Permissions refusees");
+            requestRequiredPermissions();
         }
     }
 
     private boolean hasPermissions() {
-        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-               checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+        boolean fineLocation =
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED;
+
+        boolean phoneState =
+                checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
+                        == PackageManager.PERMISSION_GRANTED;
+
+        return fineLocation && phoneState;
     }
 
-    private void requestPermissions() {
+    private void requestRequiredPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(
                     new String[]{
@@ -82,13 +92,18 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode != REQ_PERMS) return;
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != REQ_PERMS) {
+            return;
+        }
 
         if (hasPermissions()) {
             tvPermissionStatus.setText("Permissions acceptees");
-            appendDebug("OK");
+            appendDebug("Permissions acceptees");
         } else {
             tvPermissionStatus.setText("Bloque - ouvre Parametres");
+            appendDebug("Permissions bloquees");
 
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             intent.setData(Uri.parse("package:" + getPackageName()));
@@ -96,15 +111,27 @@ public class MainActivity extends Activity {
         }
     }
 
+    public void updateScanResult(String status, String detail) {
+        runOnUiThread(() -> logToScreen(status + " | " + detail));
+    }
+
     public void logToScreen(String msg) {
-        String old = tvDebug.getText().toString();
-        tvDebug.setText(old + "\n" + msg);
+        runOnUiThread(() -> {
+            String old = tvDebug.getText().toString();
+            if (old.isEmpty()) {
+                tvDebug.setText(msg);
+            } else {
+                tvDebug.setText(old + "\n" + msg);
+            }
+        });
     }
 
     private void appendDebug(String msg) {
         String old = tvDebug.getText().toString();
-        tvDebug.setText(old + "\n" + msg);
+        if (old.isEmpty()) {
+            tvDebug.setText(msg);
+        } else {
+            tvDebug.setText(old + "\n" + msg);
+        }
     }
-public void updateScanResult(String status, String detail) {
-    logToScreen(status + " | " + detail);
 }
