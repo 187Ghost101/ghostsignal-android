@@ -10,18 +10,22 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Button;
 import android.widget.TextView;
-public static MainActivity instance;
+
 public class MainActivity extends Activity {
 
     public static MainActivity instance;
 
+    private static final int REQ_PERMS = 1001;
+
+    private TextView tvPermissionStatus;
+    private TextView tvDebug;
+    private Button btnStart;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        instance = this; {
-        instance = null;
-    }
-}
+        instance = this;
+
         setContentView(R.layout.activity_main);
 
         tvPermissionStatus = findViewById(R.id.tvPermissionStatus);
@@ -40,6 +44,14 @@ public class MainActivity extends Activity {
                 requestPermissions();
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (instance == this) {
+            instance = null;
+        }
     }
 
     private void checkPermissions() {
@@ -82,6 +94,11 @@ public class MainActivity extends Activity {
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
         }
+    }
+
+    public void logToScreen(String msg) {
+        String old = tvDebug.getText().toString();
+        tvDebug.setText(old + "\n" + msg);
     }
 
     private void appendDebug(String msg) {
