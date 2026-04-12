@@ -1,200 +1,127 @@
 package com.ghostsignal.imsidetector;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
+import android.provider.Settings;
 import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
-public class MainActivity extends Activity {
-    private static final int PERM_CODE = 100;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
-    private final String[] PERMS = {
-            Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.POST_NOTIFICATIONS
-    };
+public class MainActivity extends AppCompatActivity {
 
-    public static MainActivity instance;
+    private static final int REQ_PERMS = 1001;
 
-    private TextView statusText;
-    private TextView resultText;
-    private TextView scoreText;
-    private TextView flagsText;
-    private TextView lastScanText;
-    private TextView debugText;
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private TextView tvPermissionStatus;
+    private TextView tvDebug;
+    private Button btnStart;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        instance = this;
+        setContentView(R.layout.activity_main);
 
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(48, 80, 48, 48);
-        layout.setBackgroundColor(Color.parseColor("#0A0A0A"));
+        tvPermissionStatus = findViewById(R.id.tvPermissionStatus);
+        tvDebug = findViewById(R.id.tvDebug);
+        btnStart = findViewById(R.id.btnStart);
 
-        TextView title = new TextView(this);
-        title.setText("GhostSignal");
-        title.setTextSize(32);
-        title.setTextColor(Color.parseColor("#00E5FF"));
-        title.setTypeface(null, Typeface.BOLD);
-        layout.addView(title);
+        appendDebug("MainActivity chargee");
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Detecteur IMSI Catcher - Donnees reelles");
-        subtitle.setTextSize(13);
-        subtitle.setTextColor(Color.parseColor("#888888"));
-        subtitle.setPadding(0, 8, 0, 24);
-        layout.addView(subtitle);
+        checkPermissionsOnLaunch();
 
-        statusText = new TextView(this);
-        statusText.setText("Service inactif");
-        statusText.setTextSize(15);
-        statusText.setTextColor(Color.parseColor("#FF4444"));
-        layout.addView(statusText);
+        btnStart.setOnClickListener(v -> {
+            appendDebug("Bouton clique");
 
-        Button btn = new Button(this);
-        btn.setText("DEMARRER LA SURVEILLANCE");
-        btn.setBackgroundColor(Color.parseColor("#00E5FF"));
-        btn.setTextColor(Color.BLACK);
-        btn.setOnClickListener(v -> {
-            logToScreen("Bouton clique");
-            if (hasPerms()) {
-                logToScreen("Permissions OK");
-                startScan();
+            if (hasRequiredPermissions()) {
+                tvPermissionStatus.setText("Permissions OK");
+                startService(new Intent(this, CellScanService.class));
             } else {
-                logToScreen("Permissions manquantes - demande envoyee");
-                requestPermissions(PERMS, PERM_CODE);
+                appendDebug("Permissions manquantes - demande envoyee");
+                requestRequiredPermissions();
             }
         });
-        layout.addView(btn);
+    }
 
-        resultText = new TextView(this);
-        resultText.setText("En attente...");
-        resultText.setTextSize(24);
-        resultText.setTextColor(Color.parseColor("#AAAAAA"));
-        resultText.setTypeface(null, Typeface.BOLD);
-        resultText.setPadding(0, 30, 0, 10);
-        layout.addView(resultText);
+    private void checkPermissionsOnLaunch() {
+        appendDebug("Permissions a demander au lancement");
 
-        scoreText = new TextView(this);
-        scoreText.setText("");
-        scoreText.setTextSize(14);
-        scoreText.setTextColor(Color.parseColor("#00E5FF"));
-        layout.addView(scoreText);
-
-        flagsText = new TextView(this);
-        flagsText.setText("");
-        flagsText.setTextSize(13);
-        flagsText.setTextColor(Color.parseColor("#FFAA00"));
-        flagsText.setPadding(0, 8, 0, 8);
-        layout.addView(flagsText);
-
-        lastScanText = new TextView(this);
-        lastScanText.setText("Aucun scan recu");
-        lastScanText.setTextSize(12);
-        lastScanText.setTextColor(Color.parseColor("#888888"));
-        layout.addView(lastScanText);
-
-        debugText = new TextView(this);
-        debugText.setText("\n--- DEBUG ---\n");
-        debugText.setTextSize(12);
-        debugText.setTextColor(Color.parseColor("#CCCCCC"));
-        debugText.setPadding(0, 30, 0, 0);
-        layout.addView(debugText);
-
-        scroll.addView(layout);
-        setContentView(scroll);
-
-        logToScreen("MainActivity chargee");
-
-        if (hasPerms()) {
-            logToScreen("Permissions deja accordees");
-            startScan();
+        if (hasRequiredPermissions()) {
+            tvPermissionStatus.setText("Permissions OK");
+            appendDebug("Permissions acceptees");
         } else {
-            logToScreen("Permissions a demander au lancement");
-            requestPermissions(PERMS, PERM_CODE);
+            tvPermissionStatus.setText("Permissions refusees");
+            requestRequiredPermissions();
         }
     }
 
-    public void updateScanResult(String status, int score, String flags, String network, int cellId) {
-        handler.post(() -> {
-            logToScreen("updateScanResult appelee: " + status);
+    private boolean hasRequiredPermissions() {
+        boolean fineLocation =
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED;
 
-            int color = Color.parseColor("#00FF88");
-            if ("DANGER".equals(status)) color = Color.parseColor("#FF3333");
-            else if ("SUSPICIOUS".equals(status)) color = Color.parseColor("#FFAA00");
+        boolean phoneState =
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+                        == PackageManager.PERMISSION_GRANTED;
 
-            resultText.setText(status);
-            resultText.setTextColor(color);
-            scoreText.setText("Score: " + score + "/100 | Reseau: " + network + " | CellID: " + cellId);
-            flagsText.setText("Flags: " + (flags == null ? "aucun" : flags));
-            lastScanText.setText("Dernier scan: " +
-                    new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                            .format(new java.util.Date()));
-        });
+        return fineLocation && phoneState;
     }
 
-    public void logToScreen(String msg) {
-        handler.post(() -> {
-            String current = debugText.getText().toString();
-            String time = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                    .format(new java.util.Date());
-            debugText.setText(current + "\n[" + time + "] " + msg);
-        });
-    }
-
-    private boolean hasPerms() {
-        for (String p : PERMS) {
-            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void startScan() {
-        try {
-            startForegroundService(new Intent(this, CellScanService.class));
-            statusText.setText("Surveillance active - donnees envoyees au cloud");
-            statusText.setTextColor(Color.parseColor("#00FF88"));
-            logToScreen("Foreground service demarre");
-        } catch (Exception e) {
-            logToScreen("Erreur startScan: " + e.getMessage());
-            statusText.setText("Erreur lancement service");
-            statusText.setTextColor(Color.RED);
-        }
+    private void requestRequiredPermissions() {
+        ActivityCompat.requestPermissions(
+                this,
+                new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.READ_PHONE_STATE
+                },
+                REQ_PERMS
+        );
     }
 
     @Override
-    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
-        super.onRequestPermissionsResult(code, perms, results);
-        if (hasPerms()) {
-            logToScreen("Permissions acceptees");
-            startScan();
+    public void onRequestPermissionsResult(
+            int requestCode,
+            @NonNull String[] permissions,
+            @NonNull int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != REQ_PERMS) return;
+
+        if (hasRequiredPermissions()) {
+            tvPermissionStatus.setText("Permissions acceptees");
+            appendDebug("Permissions acceptees");
+            startService(new Intent(this, CellScanService.class));
+            return;
+        }
+
+        boolean showFine =
+                ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION);
+        boolean showPhone =
+                ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_PHONE_STATE);
+
+        if (!showFine || !showPhone) {
+            tvPermissionStatus.setText("Permissions bloquees - ouvrir Parametres");
+            appendDebug("Permissions bloquees par Android - ouverture des parametres");
+
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
         } else {
-            logToScreen("Permissions refusees");
-            statusText.setText("Permissions refusees");
-            statusText.setTextColor(Color.RED);
+            tvPermissionStatus.setText("Permissions refusees");
+            appendDebug("Permissions refusees");
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        instance = null;
-        super.onDestroy();
+    private void appendDebug(String msg) {
+        String old = tvDebug.getText().toString();
+        String next = old + "\n" + msg;
+        tvDebug.setText(next);
     }
 }
