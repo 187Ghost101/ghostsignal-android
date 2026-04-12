@@ -13,7 +13,16 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Vibrator;
-import android.telephony.*;
+import android.telephony.CellIdentityGsm;
+import android.telephony.CellIdentityLte;
+import android.telephony.CellIdentityNr;
+import android.telephony.CellIdentityWcdma;
+import android.telephony.CellInfo;
+import android.telephony.CellInfoGsm;
+import android.telephony.CellInfoLte;
+import android.telephony.CellInfoNr;
+import android.telephony.CellInfoWcdma;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import java.io.File;
@@ -26,12 +35,11 @@ public class CellScanService extends Service {
     private static final String CHANNEL_ID = "ghostsignal_scan";
     private static final long SCAN_INTERVAL = 5000;
 
-    private Handler handler = new Handler(Looper.getMainLooper());
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable scanner;
 
     private String lastCell = "";
-
-    private ArrayList<String> history = new ArrayList<>();
+    private final ArrayList<String> history = new ArrayList<>();
 
     @Override
     public void onCreate() {
@@ -44,6 +52,13 @@ public class CellScanService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
+        String action = intent != null ? intent.getAction() : null;
+
+        if ("EXPORT_LOGS".equals(action)) {
+            exportLogs();
+            return START_STICKY;
+        }
+
         if (scanner == null) {
             scanner = new Runnable() {
                 @Override
@@ -53,6 +68,9 @@ public class CellScanService extends Service {
                 }
             };
             handler.post(scanner);
+            log("Boucle scan activee");
+        } else {
+            log("Boucle deja active");
         }
 
         return START_STICKY;
@@ -78,13 +96,17 @@ public class CellScanService extends Service {
             }
 
             List<CellInfo> infos = tm.getAllCellInfo();
-
             if (infos == null || infos.isEmpty()) {
                 updateUI("NO DATA", 10, "Aucune cellule");
                 return;
             }
 
-            int lte = 0, nr = 0, gsm = 0, wcdma = 0;
+            int lte = 0;
+            int nr = 0;
+            int gsm = 0;
+            int wcdma = 0;
+            int score;
+            String status;
             String detail = "";
 
             for (CellInfo info : infos) {
@@ -92,30 +114,27 @@ public class CellScanService extends Service {
                 if (info instanceof CellInfoLte) {
                     lte++;
                     CellIdentityLte id = ((CellInfoLte) info).getCellIdentity();
-                    detail = "LTE CI=" + id.getCi();
+                    detail = "LTE | CI=" + id.getCi() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
                 }
 
                 else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info instanceof CellInfoNr) {
                     nr++;
                     CellIdentityNr id = (CellIdentityNr) ((CellInfoNr) info).getCellIdentity();
-                    detail = "5G NCI=" + id.getNci();
+                    detail = "5G | NCI=" + id.getNci() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
                 }
 
                 else if (info instanceof CellInfoWcdma) {
                     wcdma++;
                     CellIdentityWcdma id = ((CellInfoWcdma) info).getCellIdentity();
-                    detail = "3G CID=" + id.getCid();
+                    detail = "3G | CID=" + id.getCid() + " LAC=" + id.getLac() + " PSC=" + id.getPsc();
                 }
 
                 else if (info instanceof CellInfoGsm) {
                     gsm++;
                     CellIdentityGsm id = ((CellInfoGsm) info).getCellIdentity();
-                    detail = "2G CID=" + id.getCid();
+                    detail = "2G | CID=" + id.getCid() + " LAC=" + id.getLac();
                 }
             }
-
-            int score;
-            String status;
 
             if (gsm > 0 && lte == 0 && nr == 0) {
                 score = 80;
@@ -123,7 +142,7 @@ public class CellScanService extends Service {
             } else if (gsm > 0) {
                 score = 50;
                 status = "SUSPICIOUS";
-            } else if (wcdma > 0 && lte == 0) {
+            } else if (wcdma > 0 && lte == 0 && nr == 0) {
                 score = 30;
                 status = "MEDIUM";
             } else if (lte > 0 || nr > 0) {
@@ -134,71 +153,76 @@ public class CellScanService extends Service {
                 status = "UNKNOWN";
             }
 
-            // changement cellule
-            if (!detail.equals(lastCell) && !lastCell.isEmpty()) {
+            if (!detail.isEmpty() && !detail.equals(lastCell) && !lastCell.isEmpty()) {
                 score += 30;
+                if (score > 100) score = 100;
                 status = "CELL SWITCH";
-                log("⚠️ changement cellule");
+                log("Changement cellule detecte");
             }
 
             lastCell = detail;
 
             String summary = detail +
                     " | LTE:" + lte +
-                    " 5G:" + nr +
-                    " 3G:" + wcdma +
-                    " 2G:" + gsm;
+                    " | 5G:" + nr +
+                    " | 3G:" + wcdma +
+                    " | 2G:" + gsm;
 
             history.add(summary);
-            if (history.size() > 20) history.remove(0);
+            if (history.size() > 50) {
+                history.remove(0);
+            }
 
+            log(summary);
             updateUI(status, score, summary);
 
             if (score >= 70) {
                 triggerAlert("Network anomaly detected");
             }
 
-            if (score >= 80) {
-                exportLogs();
-            }
-
         } catch (Exception e) {
-            updateUI("ERROR", 0, e.getMessage());
+            updateUI("ERROR", 0, e.getMessage() == null ? "Erreur inconnue" : e.getMessage());
         }
     }
 
     private void triggerAlert(String msg) {
-
-        log("🚨 ALERT: " + msg);
+        log("ALERT: " + msg);
 
         Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-        if (v != null) v.vibrate(500);
+        if (v != null) {
+            if (Build.VERSION.SDK_INT >= 26) {
+                v.vibrate(500);
+            } else {
+                v.vibrate(500);
+            }
+        }
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) {
+            Notification notif = new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("GhostSignal ALERT")
+                    .setContentText(msg)
+                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .build();
 
-        Notification notif = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("GhostSignal ALERT")
-                .setContentText(msg)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .build();
-
-        nm.notify(2, notif);
+            nm.notify(2, notif);
+        }
     }
 
     private void exportLogs() {
         try {
-            File file = new File(getExternalFilesDir(null), "ghost_log.txt");
-            FileWriter w = new FileWriter(file);
+            File file = new File(getExternalFilesDir(null), "ghostsignal_log.txt");
+            FileWriter writer = new FileWriter(file);
 
             for (String s : history) {
-                w.write(s + "\n");
+                writer.write(s + "\n");
             }
 
-            w.close();
-            log("📁 export: " + file.getAbsolutePath());
+            writer.close();
+            log("Export OK: " + file.getAbsolutePath());
 
         } catch (Exception e) {
-            log("export error: " + e.getMessage());
+            log("Export error: " + e.getMessage());
         }
     }
 
@@ -208,10 +232,10 @@ public class CellScanService extends Service {
         }
     }
 
-    private void log(String m) {
-        Log.d("GhostSignal", m);
+    private void log(String msg) {
+        Log.d("GhostSignal", msg);
         if (MainActivity.instance != null) {
-            MainActivity.instance.logToScreen(m);
+            MainActivity.instance.logToScreen(msg);
         }
     }
 
@@ -227,18 +251,23 @@ public class CellScanService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel c = new NotificationChannel(
                     CHANNEL_ID,
-                    "Scan",
+                    "GhostSignal Scan",
                     NotificationManager.IMPORTANCE_LOW
             );
             NotificationManager m = getSystemService(NotificationManager.class);
-            if (m != null) m.createNotificationChannel(c);
+            if (m != null) {
+                m.createNotificationChannel(c);
+            }
         }
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (scanner != null) handler.removeCallbacks(scanner);
+        if (scanner != null) {
+            handler.removeCallbacks(scanner);
+        }
+        log("Service arrete");
     }
 
     @Override
