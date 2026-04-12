@@ -106,3 +106,6 @@ public class MainActivity extends Activity {
         tvDebug.setText(old + "\n" + msg);
     }
 }
+public void updateScanResult(String status, String detail) {
+    logToScreen(status + " | " + detail);
+}
