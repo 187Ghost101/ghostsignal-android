@@ -10,18 +10,18 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Button;
 import android.widget.TextView;
-
+public static MainActivity instance;
 public class MainActivity extends Activity {
 
-    private static final int REQ_PERMS = 1001;
-
-    private TextView tvPermissionStatus;
-    private TextView tvDebug;
-    private Button btnStart;
+    public static MainActivity instance;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this; {
+        instance = null;
+    }
+}
         setContentView(R.layout.activity_main);
 
         tvPermissionStatus = findViewById(R.id.tvPermissionStatus);
