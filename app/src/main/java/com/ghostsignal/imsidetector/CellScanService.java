@@ -5,60 +5,74 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
-import android.telephony.CellIdentityGsm;
-import android.telephony.CellIdentityLte;
-import android.telephony.CellIdentityNr;
-import android.telephony.CellIdentityWcdma;
-import android.telephony.CellInfo;
-import android.telephony.CellInfoGsm;
-import android.telephony.CellInfoLte;
-import android.telephony.CellInfoNr;
-import android.telephony.CellInfoWcdma;
-import android.telephony.TelephonyManager;
+import android.os.Looper;
+import android.os.Vibrator;
+import android.telephony.*;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.List;
 
 public class CellScanService extends Service {
 
     private static final String CHANNEL_ID = "ghostsignal_scan";
+    private static final long SCAN_INTERVAL = 5000;
+
+    private Handler handler = new Handler(Looper.getMainLooper());
+    private Runnable scanner;
+
+    private String lastCell = "";
+
+    private ArrayList<String> history = new ArrayList<>();
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        startForeground(1, buildNotification("Scan en cours..."));
+        startForeground(1, buildNotification("Surveillance active"));
         log("Service demarre");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        scanCells();
+
+        if (scanner == null) {
+            scanner = new Runnable() {
+                @Override
+                public void run() {
+                    scanCells();
+                    handler.postDelayed(this, SCAN_INTERVAL);
+                }
+            };
+            handler.post(scanner);
+        }
+
         return START_STICKY;
     }
 
     private void scanCells() {
+
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            log("Location refusee");
-            updateUI("NO PERMISSION", 0, "ACCESS_FINE_LOCATION refusee");
+            updateUI("NO PERMISSION", 0, "Location refusee");
             return;
         }
 
         if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            log("Phone state refuse");
-            updateUI("NO PERMISSION", 0, "READ_PHONE_STATE refusee");
+            updateUI("NO PERMISSION", 0, "Phone state refuse");
             return;
         }
 
         try {
             TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
-
             if (tm == null) {
-                log("TelephonyManager null");
                 updateUI("ERROR", 0, "TelephonyManager null");
                 return;
             }
@@ -66,65 +80,53 @@ public class CellScanService extends Service {
             List<CellInfo> infos = tm.getAllCellInfo();
 
             if (infos == null || infos.isEmpty()) {
-                log("Aucune cellule detectee");
-                updateUI("NO DATA", 10, "Aucune cellule detectee");
+                updateUI("NO DATA", 10, "Aucune cellule");
                 return;
             }
 
-            int score = 0;
-            String status = "SAFE";
+            int lte = 0, nr = 0, gsm = 0, wcdma = 0;
             String detail = "";
-
-            int lteCount = 0;
-            int nrCount = 0;
-            int gsmCount = 0;
-            int wcdmaCount = 0;
 
             for (CellInfo info : infos) {
 
                 if (info instanceof CellInfoLte) {
-                    lteCount++;
+                    lte++;
                     CellIdentityLte id = ((CellInfoLte) info).getCellIdentity();
-                    detail = "LTE | CI=" + id.getCi() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
-                    log(detail);
+                    detail = "LTE CI=" + id.getCi();
                 }
 
                 else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info instanceof CellInfoNr) {
-                    nrCount++;
+                    nr++;
                     CellIdentityNr id = (CellIdentityNr) ((CellInfoNr) info).getCellIdentity();
-                    detail = "5G | NCI=" + id.getNci() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
-                    log(detail);
+                    detail = "5G NCI=" + id.getNci();
                 }
 
                 else if (info instanceof CellInfoWcdma) {
-                    wcdmaCount++;
+                    wcdma++;
                     CellIdentityWcdma id = ((CellInfoWcdma) info).getCellIdentity();
-                    detail = "3G | CID=" + id.getCid() + " LAC=" + id.getLac() + " PSC=" + id.getPsc();
-                    log(detail);
+                    detail = "3G CID=" + id.getCid();
                 }
 
                 else if (info instanceof CellInfoGsm) {
-                    gsmCount++;
+                    gsm++;
                     CellIdentityGsm id = ((CellInfoGsm) info).getCellIdentity();
-                    detail = "2G | CID=" + id.getCid() + " LAC=" + id.getLac();
-                    log(detail);
-                }
-
-                else {
-                    log("Autre type detecte: " + info.getClass().getSimpleName());
+                    detail = "2G CID=" + id.getCid();
                 }
             }
 
-            if (gsmCount > 0 && lteCount == 0 && nrCount == 0) {
+            int score;
+            String status;
+
+            if (gsm > 0 && lte == 0 && nr == 0) {
                 score = 80;
                 status = "HIGH RISK";
-            } else if (gsmCount > 0 && (lteCount > 0 || nrCount > 0 || wcdmaCount > 0)) {
+            } else if (gsm > 0) {
                 score = 50;
                 status = "SUSPICIOUS";
-            } else if (wcdmaCount > 0 && lteCount == 0 && nrCount == 0) {
+            } else if (wcdma > 0 && lte == 0) {
                 score = 30;
-                status = "MEDIUM RISK";
-            } else if (lteCount > 0 || nrCount > 0) {
+                status = "MEDIUM";
+            } else if (lte > 0 || nr > 0) {
                 score = 10;
                 status = "SAFE";
             } else {
@@ -132,18 +134,71 @@ public class CellScanService extends Service {
                 status = "UNKNOWN";
             }
 
-            String summary =
-                    detail +
-                    " | LTE:" + lteCount +
-                    " | 5G:" + nrCount +
-                    " | 3G:" + wcdmaCount +
-                    " | 2G:" + gsmCount;
+            // changement cellule
+            if (!detail.equals(lastCell) && !lastCell.isEmpty()) {
+                score += 30;
+                status = "CELL SWITCH";
+                log("⚠️ changement cellule");
+            }
+
+            lastCell = detail;
+
+            String summary = detail +
+                    " | LTE:" + lte +
+                    " 5G:" + nr +
+                    " 3G:" + wcdma +
+                    " 2G:" + gsm;
+
+            history.add(summary);
+            if (history.size() > 20) history.remove(0);
 
             updateUI(status, score, summary);
 
+            if (score >= 70) {
+                triggerAlert("Network anomaly detected");
+            }
+
+            if (score >= 80) {
+                exportLogs();
+            }
+
         } catch (Exception e) {
-            log("Erreur scan: " + e.getMessage());
-            updateUI("ERROR", 0, e.getMessage() == null ? "Erreur inconnue" : e.getMessage());
+            updateUI("ERROR", 0, e.getMessage());
+        }
+    }
+
+    private void triggerAlert(String msg) {
+
+        log("🚨 ALERT: " + msg);
+
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v != null) v.vibrate(500);
+
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        Notification notif = new Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("GhostSignal ALERT")
+                .setContentText(msg)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .build();
+
+        nm.notify(2, notif);
+    }
+
+    private void exportLogs() {
+        try {
+            File file = new File(getExternalFilesDir(null), "ghost_log.txt");
+            FileWriter w = new FileWriter(file);
+
+            for (String s : history) {
+                w.write(s + "\n");
+            }
+
+            w.close();
+            log("📁 export: " + file.getAbsolutePath());
+
+        } catch (Exception e) {
+            log("export error: " + e.getMessage());
         }
     }
 
@@ -153,41 +208,37 @@ public class CellScanService extends Service {
         }
     }
 
-    private void log(String msg) {
-        Log.d("GhostSignal", msg);
+    private void log(String m) {
+        Log.d("GhostSignal", m);
         if (MainActivity.instance != null) {
-            MainActivity.instance.logToScreen(msg);
+            MainActivity.instance.logToScreen(m);
         }
     }
 
     private Notification buildNotification(String text) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("GhostSignal")
-                    .setContentText(text)
-                    .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                    .build();
-        } else {
-            return new Notification.Builder(this)
-                    .setContentTitle("GhostSignal")
-                    .setContentText(text)
-                    .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                    .build();
-        }
+        return new Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("GhostSignal")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                .build();
     }
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
+            NotificationChannel c = new NotificationChannel(
                     CHANNEL_ID,
-                    "GhostSignal Scan",
+                    "Scan",
                     NotificationManager.IMPORTANCE_LOW
             );
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            NotificationManager m = getSystemService(NotificationManager.class);
+            if (m != null) m.createNotificationChannel(c);
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (scanner != null) handler.removeCallbacks(scanner);
     }
 
     @Override
