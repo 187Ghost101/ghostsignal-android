@@ -102,21 +102,33 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        boolean showFine =
-                ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION);
-        boolean showPhone =
-                ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_PHONE_STATE);
+      @Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (!showFine || !showPhone) {
-            tvPermissionStatus.setText("Permissions bloquees - ouvrir Parametres");
-            appendDebug("Permissions bloquees par Android - ouverture des parametres");
+    if (requestCode != REQ_PERMS) return;
 
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
-        } else {
-            tvPermissionStatus.setText("Permissions refusees");
-            appendDebug("Permissions refusees");
+    if (hasRequiredPermissions()) {
+        tvPermissionStatus.setText("Permissions acceptees");
+        appendDebug("Permissions acceptees");
+        return;
+    }
+
+    boolean showFine = shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION);
+    boolean showPhone = shouldShowRequestPermissionRationale(Manifest.permission.READ_PHONE_STATE);
+
+    if (!showFine || !showPhone) {
+        tvPermissionStatus.setText("Permissions bloquees - ouvre Parametres");
+        appendDebug("Permissions bloquees par Android");
+
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        startActivity(intent);
+    } else {
+        tvPermissionStatus.setText("Permissions refusees");
+        appendDebug("Permissions refusees");
+    }
+}
         }
     }
 
