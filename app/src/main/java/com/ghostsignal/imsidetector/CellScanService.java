@@ -9,7 +9,16 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
-import android.telephony.*;
+import android.telephony.CellIdentityGsm;
+import android.telephony.CellIdentityLte;
+import android.telephony.CellIdentityNr;
+import android.telephony.CellIdentityWcdma;
+import android.telephony.CellInfo;
+import android.telephony.CellInfoGsm;
+import android.telephony.CellInfoLte;
+import android.telephony.CellInfoNr;
+import android.telephony.CellInfoWcdma;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import java.util.List;
@@ -23,7 +32,7 @@ public class CellScanService extends Service {
         super.onCreate();
         createNotificationChannel();
         startForeground(1, buildNotification("Scan en cours..."));
-        log("Service démarré");
+        log("Service demarre");
     }
 
     @Override
@@ -34,68 +43,113 @@ public class CellScanService extends Service {
 
     private void scanCells() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            log("❌ Location refusée");
+            log("Location refusee");
+            updateUI("NO PERMISSION", 0, "ACCESS_FINE_LOCATION refusee");
             return;
         }
 
         if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            log("❌ Phone state refusé");
+            log("Phone state refuse");
+            updateUI("NO PERMISSION", 0, "READ_PHONE_STATE refusee");
             return;
         }
 
         try {
             TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
-            List<CellInfo> infos = tm.getAllCellInfo();
 
-            if (infos == null || infos.isEmpty()) {
-                log("⚠️ Aucune cellule détectée");
+            if (tm == null) {
+                log("TelephonyManager null");
+                updateUI("ERROR", 0, "TelephonyManager null");
                 return;
             }
 
-            log("📡 Cellules trouvées: " + infos.size());
+            List<CellInfo> infos = tm.getAllCellInfo();
+
+            if (infos == null || infos.isEmpty()) {
+                log("Aucune cellule detectee");
+                updateUI("NO DATA", 10, "Aucune cellule detectee");
+                return;
+            }
+
+            int score = 0;
+            String status = "SAFE";
+            String detail = "";
+
+            int lteCount = 0;
+            int nrCount = 0;
+            int gsmCount = 0;
+            int wcdmaCount = 0;
 
             for (CellInfo info : infos) {
 
                 if (info instanceof CellInfoLte) {
+                    lteCount++;
                     CellIdentityLte id = ((CellInfoLte) info).getCellIdentity();
-                    String msg = "LTE | CI=" + id.getCi() +
-                            " TAC=" + id.getTac() +
-                            " PCI=" + id.getPci();
-                    log(msg);
-                    updateUI("LTE détecté", msg);
+                    detail = "LTE | CI=" + id.getCi() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
+                    log(detail);
                 }
 
                 else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info instanceof CellInfoNr) {
+                    nrCount++;
                     CellIdentityNr id = (CellIdentityNr) ((CellInfoNr) info).getCellIdentity();
-                    String msg = "5G NR | NCI=" + id.getNci() +
-                            " TAC=" + id.getTac();
-                    log(msg);
-                    updateUI("5G détecté", msg);
+                    detail = "5G | NCI=" + id.getNci() + " TAC=" + id.getTac() + " PCI=" + id.getPci();
+                    log(detail);
                 }
 
                 else if (info instanceof CellInfoWcdma) {
+                    wcdmaCount++;
                     CellIdentityWcdma id = ((CellInfoWcdma) info).getCellIdentity();
-                    String msg = "3G | CID=" + id.getCid();
-                    log(msg);
-                    updateUI("3G détecté", msg);
+                    detail = "3G | CID=" + id.getCid() + " LAC=" + id.getLac() + " PSC=" + id.getPsc();
+                    log(detail);
                 }
 
                 else if (info instanceof CellInfoGsm) {
+                    gsmCount++;
                     CellIdentityGsm id = ((CellInfoGsm) info).getCellIdentity();
-                    String msg = "2G | CID=" + id.getCid();
-                    log(msg);
-                    updateUI("2G détecté", msg);
+                    detail = "2G | CID=" + id.getCid() + " LAC=" + id.getLac();
+                    log(detail);
+                }
+
+                else {
+                    log("Autre type detecte: " + info.getClass().getSimpleName());
                 }
             }
 
+            if (gsmCount > 0 && lteCount == 0 && nrCount == 0) {
+                score = 80;
+                status = "HIGH RISK";
+            } else if (gsmCount > 0 && (lteCount > 0 || nrCount > 0 || wcdmaCount > 0)) {
+                score = 50;
+                status = "SUSPICIOUS";
+            } else if (wcdmaCount > 0 && lteCount == 0 && nrCount == 0) {
+                score = 30;
+                status = "MEDIUM RISK";
+            } else if (lteCount > 0 || nrCount > 0) {
+                score = 10;
+                status = "SAFE";
+            } else {
+                score = 20;
+                status = "UNKNOWN";
+            }
+
+            String summary =
+                    detail +
+                    " | LTE:" + lteCount +
+                    " | 5G:" + nrCount +
+                    " | 3G:" + wcdmaCount +
+                    " | 2G:" + gsmCount;
+
+            updateUI(status, score, summary);
+
         } catch (Exception e) {
-            log("💥 Erreur: " + e.getMessage());
+            log("Erreur scan: " + e.getMessage());
+            updateUI("ERROR", 0, e.getMessage() == null ? "Erreur inconnue" : e.getMessage());
         }
     }
 
-    private void updateUI(String status, String detail) {
+    private void updateUI(String status, int score, String detail) {
         if (MainActivity.instance != null) {
-            MainActivity.instance.updateScanResult(status, detail);
+            MainActivity.instance.updateScanResult(status, score, detail);
         }
     }
 
