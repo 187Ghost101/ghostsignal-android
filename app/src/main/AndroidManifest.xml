@@ -11,7 +11,11 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:roundIcon="@android:drawable/sym_def_app_icon"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+   <?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AppCompat.Light.NoActionBar"
+        parent="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+</resources>
 
         <activity
             android:name=".MainActivity"
